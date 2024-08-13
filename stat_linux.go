@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kevwan/tproxy/display"
+	"github.com/meta-quick/tproxy/display"
 	"github.com/olekukonko/tablewriter"
 )
 
