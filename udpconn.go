@@ -23,12 +23,11 @@ type UdpPairedConnection struct {
 	stopChan chan struct{}
 }
 
-func NewUdpPairedConnection(id int, svrConn net.Conn, cliAddr net.UDPAddr) *UdpPairedConnection {
-	cliConn := NewUdpClient(id, cliAddr)
+func NewUdpPairedConnection(id int, svrConn *net.UDPConn, cliAddr net.UDPAddr) *UdpPairedConnection {
+	cliConn := NewUdpClient(id, svrConn, cliAddr)
 	return &UdpPairedConnection{
 		id:       id,
 		cliAddr:  cliAddr,
-		svrConn:  svrConn,
 		cliConn:  cliConn,
 		stopChan: make(chan struct{}),
 	}
@@ -60,7 +59,7 @@ func (c *UdpPairedConnection) copyDataWithRateLimit(dst io.Writer, src io.Reader
 
 func (c *UdpPairedConnection) handleClientMessage() {
 	// client closed also trigger server close.
-	defer c.stop()
+	//defer c.stop()
 
 	r, w := io.Pipe()
 	tee := io.MultiWriter(c.svrConn, w)
@@ -70,7 +69,7 @@ func (c *UdpPairedConnection) handleClientMessage() {
 
 func (c *UdpPairedConnection) handleServerMessage() {
 	// server closed also trigger client close.
-	defer c.stop()
+	// defer c.stop()
 
 	r, w := io.Pipe()
 	tee := io.MultiWriter(newDelayedWriter(c.cliConn, settings.Delay, c.stopChan), w)
@@ -79,7 +78,7 @@ func (c *UdpPairedConnection) handleServerMessage() {
 }
 
 func (c *UdpPairedConnection) process() {
-	defer c.stop()
+	//defer c.stop()
 
 	conn, err := net.Dial("udp", settings.Remote)
 	if err != nil {
@@ -124,7 +123,8 @@ func UdpRelayListener() error {
 
 	var connIndex int
 	buf := make([]byte, 8192)
-	udpmap := make(map[string]*UdpPairedConnection)
+
+	udp_cache := NewTimeCache[*UdpPairedConnection](2*time.Minute, 10)
 	for {
 		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
@@ -137,10 +137,10 @@ func UdpRelayListener() error {
 		if n <= 0 {
 			continue
 		}
-		pconn, ok := udpmap[addr.String()]
+		pconn, ok := udp_cache.Get(addr.String())
 		if !ok {
 			pconn = NewUdpPairedConnection(connIndex, conn, *addr)
-			udpmap[addr.String()] = pconn
+			udp_cache.Set(addr.String(), pconn)
 		}
 
 		//put data
@@ -156,8 +156,8 @@ type UdpClient struct {
 	buffer  gocodec.Buffer
 }
 
-func NewUdpClient(id int, cliAddr net.UDPAddr) *UdpClient {
-	t := &UdpClient{id: id, cliAddr: cliAddr, buffer: gocodec.Buffer{}}
+func NewUdpClient(id int, conn *net.UDPConn, cliAddr net.UDPAddr) *UdpClient {
+	t := &UdpClient{id: id, conn: conn, cliAddr: cliAddr, buffer: gocodec.Buffer{}}
 	return t
 }
 
