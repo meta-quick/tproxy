@@ -1,11 +1,6 @@
 # tproxy
 
-English | [简体中文](readme-cn.md) | [日本語](readme-ja.md)
-
-[![Go](https://github.com/kevwan/tproxy/workflows/Go/badge.svg?branch=main)](https://github.com/kevwan/tproxy/actions)
-[![Go Report Card](https://goreportcard.com/badge/github.com/kevwan/tproxy)](https://goreportcard.com/report/github.com/kevwan/tproxy)
-[![Release](https://img.shields.io/github/v/release/kevwan/tproxy.svg?style=flat-square)](https://github.com/kevwan/tproxy)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+English | [简体中文](readme-cn.md) 
 
 <a href="https://www.buymeacoffee.com/kevwan" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 60px !important;width: 217px !important;" ></a>
 
@@ -19,25 +14,7 @@ When I develop backend services and write [go-zero](https://github.com/zeromicro
 ## Installation
 
 ```shell
-$ go install github.com/kevwan/tproxy@latest
-```
-
-Or use docker images:
-
-```shell
-$ docker run --rm -it -p <listen-port>:<listen-port> -p <remote-port>:<remote-port> kevinwan/tproxy:v1 tproxy -l 0.0.0.0 -p <listen-port> -r host.docker.internal:<remote-port>
-```
-
-For arm64:
-
-```shell
-$ docker run --rm -it -p <listen-port>:<listen-port> -p <remote-port>:<remote-port> kevinwan/tproxy:v1-arm64 tproxy -l 0.0.0.0 -p <listen-port> -r host.docker.internal:<remote-port>
-```
-
-On Windows, you can use [scoop](https://scoop.sh/):
-
-```shell
-$ scoop install tproxy
+$ go install github.com/meta-quick/tproxy@latest
 ```
 
 ## Usages
@@ -61,6 +38,8 @@ Usage of tproxy:
     	The type of protocol, currently support http2, grpc, redis and mongodb
   -up int
     	Upward speed limit(bytes/second)
+  -x  string 
+        Relay protocol type, default to tcp, currently support tcp and udp
 ```
 
 ## Examples
