@@ -1,11 +1,12 @@
-module github.com/kevwan/tproxy
+module github.com/meta-quick/tproxy
 
-go 1.18
+go 1.22.3
 
 require (
 	github.com/eclipse/paho.mqtt.golang v1.5.0
 	github.com/fatih/color v1.17.0
 	github.com/juju/ratelimit v1.0.2
+	github.com/meta-quick/gocodec v0.6.1
 	github.com/olekukonko/tablewriter v0.0.5
 	go.mongodb.org/mongo-driver v1.16.1
 	golang.org/x/net v0.28.0

@@ -8,7 +8,7 @@ import (
 	"io"
 
 	"github.com/fatih/color"
-	"github.com/kevwan/tproxy/display"
+	"github.com/meta-quick/tproxy/display"
 	"go.mongodb.org/mongo-driver/bson"
 )
 

@@ -4,7 +4,7 @@ import (
 	"io"
 
 	"github.com/eclipse/paho.mqtt.golang/packets"
-	"github.com/kevwan/tproxy/display"
+	"github.com/meta-quick/tproxy/display"
 )
 
 type mqttInterop struct {

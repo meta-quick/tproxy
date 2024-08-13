@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/fatih/color"
-	"github.com/kevwan/tproxy/display"
+	"github.com/meta-quick/tproxy/display"
 )
 
 type mysqlInterop struct{}

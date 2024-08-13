@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/kevwan/tproxy/display"
+	"github.com/meta-quick/tproxy/display"
 )
 
 type redisInterop struct {

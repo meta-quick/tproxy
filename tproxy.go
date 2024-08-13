@@ -21,6 +21,7 @@ func main() {
 		quiet     = flag.Bool("q", false, "Quiet mode, only prints connection open/close and stats, default false")
 		upLimit   = flag.Int64("up", 0, "Upward speed limit(bytes/second)")
 		downLimit = flag.Int64("down", 0, "Downward speed limit(bytes/second)")
+		transport = flag.String("x", "tcp", "The transport type of protocol, currently support tcp and udp")
 	)
 
 	if len(os.Args) <= 1 {
@@ -37,7 +38,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := startListener(); err != nil {
+	var relay Relay
+	if *transport == "udp" {
+		relay = NewUdpRelay()
+	} else {
+		relay = NewTcpRelay()
+	}
+
+	if err := relay.StartListener(); err != nil {
 		fmt.Fprintln(os.Stderr, color.HiRedString("[x] Failed to start listener: %v", err))
 		os.Exit(1)
 	}

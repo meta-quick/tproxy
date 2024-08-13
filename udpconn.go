@@ -1,47 +1,44 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net"
-	"strconv"
 	"sync"
 	"time"
 
 	"github.com/fatih/color"
 	"github.com/juju/ratelimit"
+	"github.com/meta-quick/gocodec"
 	"github.com/meta-quick/tproxy/display"
 	"github.com/meta-quick/tproxy/protocol"
 )
 
-const (
-	useOfClosedConn = "use of closed network connection"
-	statInterval    = time.Second * 5
-)
-
-var (
-	errClientCanceled = errors.New("client canceled")
-	stat              Stater
-)
-
-type PairedConnection struct {
+type UdpPairedConnection struct {
 	id       int
-	cliConn  net.Conn
+	cliAddr  net.UDPAddr
+	cliConn  *UdpClient
 	svrConn  net.Conn
 	once     sync.Once
 	stopChan chan struct{}
 }
 
-func NewPairedConnection(id int, cliConn net.Conn) *PairedConnection {
-	return &PairedConnection{
+func NewUdpPairedConnection(id int, svrConn net.Conn, cliAddr net.UDPAddr) *UdpPairedConnection {
+	cliConn := NewUdpClient(id, cliAddr)
+	return &UdpPairedConnection{
 		id:       id,
+		cliAddr:  cliAddr,
+		svrConn:  svrConn,
 		cliConn:  cliConn,
 		stopChan: make(chan struct{}),
 	}
 }
 
-func (c *PairedConnection) copyData(dst io.Writer, src io.Reader, tag string) {
+func (c *UdpPairedConnection) Write(buffer []byte) (n int, err error) {
+	return c.cliConn.buffer.Write(buffer)
+}
+
+func (c *UdpPairedConnection) copyData(dst io.Writer, src io.Reader, tag string) {
 	_, e := io.Copy(dst, src)
 	if e != nil {
 		netOpError, ok := e.(*net.OpError)
@@ -52,7 +49,7 @@ func (c *PairedConnection) copyData(dst io.Writer, src io.Reader, tag string) {
 	}
 }
 
-func (c *PairedConnection) copyDataWithRateLimit(dst io.Writer, src io.Reader, tag string, limit int64) {
+func (c *UdpPairedConnection) copyDataWithRateLimit(dst io.Writer, src io.Reader, tag string, limit int64) {
 	if limit > 0 {
 		bucket := ratelimit.NewBucket(time.Second, limit)
 		src = ratelimit.Reader(src, bucket)
@@ -61,7 +58,7 @@ func (c *PairedConnection) copyDataWithRateLimit(dst io.Writer, src io.Reader, t
 	c.copyData(dst, src, tag)
 }
 
-func (c *PairedConnection) handleClientMessage() {
+func (c *UdpPairedConnection) handleClientMessage() {
 	// client closed also trigger server close.
 	defer c.stop()
 
@@ -71,7 +68,7 @@ func (c *PairedConnection) handleClientMessage() {
 	c.copyDataWithRateLimit(tee, c.cliConn, protocol.ClientSide, settings.UpLimit)
 }
 
-func (c *PairedConnection) handleServerMessage() {
+func (c *UdpPairedConnection) handleServerMessage() {
 	// server closed also trigger client close.
 	defer c.stop()
 
@@ -81,10 +78,10 @@ func (c *PairedConnection) handleServerMessage() {
 	c.copyDataWithRateLimit(tee, c.svrConn, protocol.ServerSide, settings.DownLimit)
 }
 
-func (c *PairedConnection) process() {
+func (c *UdpPairedConnection) process() {
 	defer c.stop()
 
-	conn, err := net.Dial("tcp", settings.Remote)
+	conn, err := net.Dial("udp", settings.Remote)
 	if err != nil {
 		display.PrintlnWithTime(color.HiRedString("[x][%d] Couldn't connect to server: %v", c.id, err))
 		return
@@ -92,21 +89,18 @@ func (c *PairedConnection) process() {
 
 	display.PrintlnWithTime(color.HiGreenString("[%d] Connected to server: %s", c.id, conn.RemoteAddr()))
 
-	stat.AddConn(strconv.Itoa(c.id), conn.(*net.TCPConn))
 	c.svrConn = conn
 	go c.handleServerMessage()
 
 	c.handleClientMessage()
 }
 
-func (c *PairedConnection) stop() {
+func (c *UdpPairedConnection) stop() {
 	c.once.Do(func() {
 		close(c.stopChan)
-		stat.DelConn(strconv.Itoa(c.id))
 
 		if c.cliConn != nil {
 			display.PrintlnWithTime(color.HiBlueString("[%d] Client connection closed", c.id))
-			c.cliConn.Close()
 		}
 		if c.svrConn != nil {
 			display.PrintlnWithTime(color.HiBlueString("[%d] Server connection closed", c.id))
@@ -115,43 +109,75 @@ func (c *PairedConnection) stop() {
 	})
 }
 
-func TcpRelayListener() error {
-	stat = NewStater(NewConnCounter(), NewStatPrinter(statInterval))
-	go stat.Start()
+func UdpRelayListener() error {
+	conn, err := net.ListenUDP("udp", &net.UDPAddr{
+		IP:   net.ParseIP(settings.LocalHost),
+		Port: settings.LocalPort,
+	})
 
-	conn, err := net.Listen("tcp", fmt.Sprintf("%s:%d", settings.LocalHost, settings.LocalPort))
 	if err != nil {
 		return fmt.Errorf("failed to start listener: %w", err)
 	}
 	defer conn.Close()
 
-	display.PrintfWithTime("Listening on %s...\n", conn.Addr().String())
+	display.PrintfWithTime("Listening on %s...\n", conn.LocalAddr().String())
 
 	var connIndex int
+	buf := make([]byte, 8192)
+	udpmap := make(map[string]*UdpPairedConnection)
 	for {
-		cliConn, err := conn.Accept()
+		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			return fmt.Errorf("server: accept: %w", err)
 		}
 
 		connIndex++
-		display.PrintlnWithTime(color.HiGreenString("[%d] Accepted from: %s",
-			connIndex, cliConn.RemoteAddr()))
+		display.PrintlnWithTime(color.HiGreenString("[%d] Packet from: %s",
+			connIndex, addr))
+		if n <= 0 {
+			continue
+		}
+		pconn, ok := udpmap[addr.String()]
+		if !ok {
+			pconn = NewUdpPairedConnection(connIndex, conn, *addr)
+			udpmap[addr.String()] = pconn
+		}
 
-		pconn := NewPairedConnection(connIndex, cliConn)
+		//put data
+		pconn.Write(buf[:n])
 		go pconn.process()
 	}
 }
 
-type TcpRelay struct {
+type UdpClient struct {
+	conn    *net.UDPConn
+	id      int
+	cliAddr net.UDPAddr
+	buffer  gocodec.Buffer
 }
 
-func NewTcpRelay() *TcpRelay {
-	t := &TcpRelay{}
+func NewUdpClient(id int, cliAddr net.UDPAddr) *UdpClient {
+	t := &UdpClient{id: id, cliAddr: cliAddr, buffer: gocodec.Buffer{}}
 	return t
 }
 
-func (t *TcpRelay) StartListener() error {
-	err := TcpRelayListener()
+func (c *UdpClient) Read(b []byte) (n int, err error) {
+	return c.buffer.ReadLess(b)
+}
+
+func (c *UdpClient) Write(b []byte) (n int, err error) {
+	return c.conn.WriteToUDP(b, &c.cliAddr)
+}
+
+type UdpRelay struct {
+}
+
+func NewUdpRelay() *UdpRelay {
+	t := &UdpRelay{}
+	return t
+}
+
+func (t *UdpRelay) StartListener() error {
+	err := UdpRelayListener()
 	return err
 }
