@@ -5,6 +5,10 @@ import (
 	"time"
 )
 
+type Closeable interface {
+	Close() error
+}
+
 type CacheItem[T any] struct {
 	Value      T
 	Expiration time.Time
@@ -98,6 +102,10 @@ func (c *TimeCache[T]) evictExpired() {
 		for key, item := range bucket.items {
 			if time.Now().After(item.Expiration) {
 				delete(bucket.items, key)
+				var intf interface{} = item.Value
+				if closeable, ok := intf.(Closeable); ok {
+					_ = closeable.Close()
+				}
 			}
 		}
 		bucket.mu.Unlock()

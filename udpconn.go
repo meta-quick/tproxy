@@ -79,16 +79,17 @@ func (c *UdpPairedConnection) handleServerMessage() {
 
 func (c *UdpPairedConnection) process() {
 	//defer c.stop()
+	if c.svrConn == nil {
+		conn, err := net.Dial("udp", settings.Remote)
+		if err != nil {
+			display.PrintlnWithTime(color.HiRedString("[x][%d] Couldn't connect to server: %v", c.id, err))
+			return
+		}
 
-	conn, err := net.Dial("udp", settings.Remote)
-	if err != nil {
-		display.PrintlnWithTime(color.HiRedString("[x][%d] Couldn't connect to server: %v", c.id, err))
-		return
+		display.PrintlnWithTime(color.HiGreenString("[%d] Connected to server: %s", c.id, conn.RemoteAddr()))
+
+		c.svrConn = conn
 	}
-
-	display.PrintlnWithTime(color.HiGreenString("[%d] Connected to server: %s", c.id, conn.RemoteAddr()))
-
-	c.svrConn = conn
 	go c.handleServerMessage()
 
 	c.handleClientMessage()
@@ -108,6 +109,11 @@ func (c *UdpPairedConnection) stop() {
 	})
 }
 
+func (c *UdpPairedConnection) Close() error {
+	c.stop()
+	return nil
+}
+
 func UdpRelayListener() error {
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{
 		IP:   net.ParseIP(settings.LocalHost),
@@ -125,20 +131,22 @@ func UdpRelayListener() error {
 	buf := make([]byte, 8192)
 
 	udp_cache := NewTimeCache[*UdpPairedConnection](2*time.Minute, 10)
+	defer udp_cache.Stop()
 	for {
 		n, addr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			return fmt.Errorf("server: accept: %w", err)
 		}
 
-		connIndex++
-		display.PrintlnWithTime(color.HiGreenString("[%d] Packet from: %s",
-			connIndex, addr))
 		if n <= 0 {
 			continue
 		}
 		pconn, ok := udp_cache.Get(addr.String())
 		if !ok {
+			connIndex++
+			display.PrintlnWithTime(color.HiGreenString("[%d] Packet from: %s",
+				connIndex, addr))
+
 			pconn = NewUdpPairedConnection(connIndex, conn, *addr)
 			udp_cache.Set(addr.String(), pconn)
 		}
