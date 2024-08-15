@@ -161,16 +161,18 @@ type UdpClient struct {
 	conn    *net.UDPConn
 	id      int
 	cliAddr net.UDPAddr
-	buffer  gocodec.Buffer
+	buffer  gocodec.RingBuffer
 }
 
 func NewUdpClient(id int, conn *net.UDPConn, cliAddr net.UDPAddr) *UdpClient {
-	t := &UdpClient{id: id, conn: conn, cliAddr: cliAddr, buffer: gocodec.Buffer{}}
+	t := &UdpClient{id: id, conn: conn, cliAddr: cliAddr, buffer: *gocodec.New(65535)}
 	return t
 }
 
 func (c *UdpClient) Read(b []byte) (n int, err error) {
-	return c.buffer.ReadLess(b)
+	n, err = c.buffer.Read(b)
+	//c.buffer.Reset()
+	return
 }
 
 func (c *UdpClient) Write(b []byte) (n int, err error) {
